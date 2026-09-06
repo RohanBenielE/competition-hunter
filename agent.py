@@ -1,137 +1,167 @@
+from memory import get_user_profile
+
 from dotenv import load_dotenv
 import os
 import json
+from datetime import datetime
+
 from openai import OpenAI
 
-from tools import (
-    search_competitions,
-    fetch_competition,
-    match_competition
-)
+from actions import execute_action
+
+
+# -----------------------------------
+# LOAD ENVIRONMENT VARIABLES
+# -----------------------------------
 
 load_dotenv()
 
 
+# -----------------------------------
+# OPENROUTER CLIENT
+# -----------------------------------
 
 client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
     base_url="https://openrouter.ai/api/v1"
 )
 
-
+# -----------------------------------
+# TOOL DEFINITIONS
+# -----------------------------------
 
 tools = [
 
     {
         "type": "function",
+
         "function": {
+
             "name": "search_competitions",
+
             "description": """
 Search the web for current and upcoming
-hackathons and competitions.
+competitions, hackathons, challenges,
+and contests.
 """,
+
             "parameters": {
+
                 "type": "object",
+
                 "properties": {
+
                     "query": {
                         "type": "string",
-                        "description":
-                        "Search query for relevant current competitions."
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description":
-                        "Maximum number of search results.",
-                        "default": 5
+                        "description": "Search query for competitions"
                     }
+
                 },
-                "required": ["query"]
+
+                "required": [
+                    "query"
+                ]
             }
         }
     },
 
+
     {
         "type": "function",
+
         "function": {
+
             "name": "fetch_competition",
+
             "description": """
-Open an individual competition webpage.
-
-The tool returns:
-- webpage content
-- detected dates
-- detected deadline
-- whether the competition appears expired
-
-IMPORTANT:
-If is_expired is true, do NOT recommend
-the competition.
+Fetch and verify an individual competition page.
+Extract useful details such as title, deadline,
+eligibility, mode, description and expiry status.
 """,
+
             "parameters": {
+
                 "type": "object",
+
                 "properties": {
+
                     "url": {
                         "type": "string",
-                        "description":
-                        "URL of the individual competition webpage."
+                        "description": "URL of the competition page"
                     }
+
                 },
-                "required": ["url"]
+
+                "required": [
+                    "url"
+                ]
             }
         }
     },
 
+
     {
         "type": "function",
+
         "function": {
+
             "name": "match_competition",
+
             "description": """
-Calculate how well a CURRENT competition
-matches the user's profile.
+Calculate how well a competition matches
+the user's skills, interests, experience level
+and preference.
 """,
+
             "parameters": {
+
                 "type": "object",
+
                 "properties": {
+
                     "user_skills": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         }
                     },
+
                     "user_interests": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         }
                     },
+
                     "experience_level": {
                         "type": "string"
                     },
+
                     "preference": {
                         "type": "string"
                     },
-                  "competition_text": {
-    "type": "string"
-},
 
-"is_expired": {
-    "type": "boolean",
-    "description":
-    "Whether fetch_competition verified that this competition is expired."
-},
+                    "competition_text": {
+                        "type": "string"
+                    },
 
-"deadline": {
-    "type": "string",
-    "description":
-    "Verified competition deadline returned by fetch_competition. Use null if not verified."
-}
+                    "is_expired": {
+                        "type": "boolean"
+                    },
+
+                    "deadline": {
+                        "type": "string"
+                    }
                 },
+
                 "required": [
                     "user_skills",
                     "user_interests",
                     "experience_level",
                     "preference",
-                    "competition_text"
+                    "competition_text",
+                    "is_expired",
+                    "deadline"
                 ]
             }
         }
@@ -139,298 +169,147 @@ matches the user's profile.
 ]
 
 
-# ==========================================
-# TOOL EXECUTOR
-# ==========================================
+# -----------------------------------
+# TOOL EXECUTION
+# -----------------------------------
 
 def execute_tool(name, arguments):
 
-    # --------------------------------------
-    # SEARCH TOOL
-    # --------------------------------------
-
-    if name == "search_competitions":
-
-        return search_competitions(
-            **arguments
-        )
+    return execute_action(
+        name,
+        arguments
+    )
 
 
-    # --------------------------------------
-    # FETCH TOOL
-    # --------------------------------------
-
-    elif name == "fetch_competition":
-
-        return fetch_competition(
-            **arguments
-        )
-
-
-    # --------------------------------------
-    # MATCH TOOL
-    # --------------------------------------
-
-    elif name == "match_competition":
-
-        return match_competition(
-            **arguments
-        )
-
-
-    # --------------------------------------
-    # UNKNOWN TOOL
-    # --------------------------------------
-
-    else:
-
-        return {
-            "error": f"Unknown tool: {name}"
-        }
-
-# ==========================================
+# -----------------------------------
 # REACT AGENT
-# ==========================================
+# -----------------------------------
 
-def run_agent(user_profile):
+def run_agent(user_profile, previous_profile=None):
 
-    messages = [
+    if previous_profile is None:
+        previous_profile = get_user_profile()
 
-        {
-            "role": "system",
 
-            "content": """
-You are Competition Hunter.
 
-CURRENT DATE:
-September 5, 2026.
+    # -----------------------------------
+    # SYSTEM PROMPT
+    # -----------------------------------
+        current_date = datetime.now().strftime("%Y-%m-%d")
+    system_prompt = """
+You are COMPETITION HUNTER, an Agentic AI
+that finds current and upcoming competitions,
+hackathons, contests and challenges.
 
-Your job is to find CURRENT and UPCOMING
-competitions and hackathons that match
-the user's profile.
+Today's date is: {current_date}
 
-==========================================
-STRICT DATE RULES
-==========================================
+You must use the ReAct process:
 
-1. Never recommend an expired competition.
+THINK → ACT → OBSERVE → THINK → ACT → FINAL
 
-2. Never recommend an event whose verified
-   deadline is before September 5, 2026.
-
-3. If fetch_competition returns:
-
-   is_expired = true
-
-   immediately reject that competition.
-
-4. Do NOT call match_competition for an
-   expired competition.
-
-5. A competition with an old deadline must
-   NOT be recommended even if its webpage
-   still says "registration open".
-
-6. Prefer competitions with deadlines after
-   September 5, 2026.
-
-7. If the deadline cannot be verified,
-   clearly say "Deadline not verified".
-
-==========================================
-COMPETITION PAGE RULE
-==========================================
-
-A search result is NOT automatically a
-competition page.
-
-You MUST verify that the URL belongs to
-the individual competition before recommending
-that competition.
-
-==========================================
-LISTING PAGE RULE
-==========================================
-
-A page containing multiple competitions,
-hackathons, articles, directories, or lists
-is NOT an individual competition.
-
-Examples:
-
-"Top 20 Hackathons"
-
-"Upcoming Hackathons in India"
-
-"2026 Upcoming Hackathons"
-
-"AI Hackathons"
-
-are listing/article pages.
-
-DO NOT recommend these pages directly.
-
-==========================================
-INDIVIDUAL URL RULE
-==========================================
-
-Every recommended competition MUST have
-its own individual competition URL.
-
-If multiple competitions are mentioned on
-one listing page, you MUST NOT give the same
-listing URL to all of them.
-
-Instead:
-
-1. Identify the competition name.
-
-2. Search again for that specific competition.
-
-3. Find its individual official competition page.
-
-4. Fetch that individual page.
-
-5. Verify its information.
-
-6. Only then match and recommend it.
-
-==========================================
-VERIFICATION RULE
-==========================================
-
-A competition can ONLY be recommended if:
-
-- Its individual page was fetched.
-- The fetched page contains information
-  about that specific competition.
-- Its deadline/status is verified when possible.
-- Its URL is the individual competition URL.
-
-If you cannot find an individual page,
-DO NOT recommend the competition.
-
-==========================================
-TOOLS
-==========================================
+You have three tools:
 
 1. search_competitions
-
-Search the web for current competitions.
-
 2. fetch_competition
-
-Open an individual competition page and
-retrieve its actual information.
-
-This tool also returns:
-
-- deadline
-- found dates
-- is_expired
-
 3. match_competition
 
-Calculate compatibility with the user.
 
-==========================================
-REACT PROCESS
-==========================================
+IMPORTANT DATE RULES:
 
-THINK
-↓
-ACT
-↓
-OBSERVE
-↓
-THINK
-↓
-ACT
-↓
-OBSERVE
-↓
-FINAL
+- Today's date is provided dynamically by the system.
+- Use today's date as the reference when deciding
+  whether a competition is current, upcoming, or expired.
+- Only recommend competitions that are CURRENT
+  or UPCOMING.
+- Never recommend competitions whose deadline
+  has already passed.
+- Always verify the deadline using the actual
+  competition page whenever possible.
 
-==========================================
-NORMAL WORKFLOW
-==========================================
 
-1. Search for relevant current competitions.
+IMPORTANT PAGE RULES:
 
-2. Review the search results.
+- Prefer individual competition pages.
+- Do NOT recommend a general listing page,
+  search page, category page or collection page
+  as the competition itself.
+- Each recommended competition must represent
+  a specific competition.
 
-3. Reject obvious listing, category,
-   directory, and article pages.
 
-4. If a useful competition is mentioned
-   inside a listing page, search specifically
-   for that competition's individual page.
+VERIFICATION PROCESS:
 
-5. Select individual competition pages.
+1. Search for competitions.
+2. Examine the search results.
+3. Fetch promising individual competition pages.
+4. Check whether the competition is expired.
+5. Match valid competitions against the user's profile.
+6. Return the best matches.
 
-6. Fetch each individual page.
 
-7. Inspect the returned:
+MATCHING:
 
-   deadline
-   is_expired
-   content
+Consider:
 
-8. Reject expired competitions.
+- Skills
+- Interests
+- Experience level
+- Online / Offline preference
+- Competition deadline
 
-9. Only call match_competition for
-   verified non-expired competitions.
 
-10. You MUST call match_competition for
-    EVERY verified non-expired competition
-    before recommending it.
+MEMORY:
 
-11. Never recommend a competition if its
-    match score has not been calculated.
+The user may have a previous remembered profile.
 
-12. Never recommend a competition if its
-    individual page was not fetched.
+The current profile always has priority.
 
-13. Compare the match scores.
+Use previous memory only as additional context
+when the current profile does not contradict it.
 
-14. Recommend the strongest CURRENT
-    competitions based on the scores.
+FINAL RESPONSE:
 
-==========================================
-FINAL RESPONSE
-==========================================
+Return ONLY verified current or upcoming
+individual competitions.
 
-For each recommendation provide:
+For each competition provide:
 
-🏆 Competition name
+- Competition name
+- Organizer
+- Deadline
+- Mode
+- Why it matches the user
+- Match score
+- Competition URL
 
-📊 Match score
+STRICT FINAL CHECK:
 
-🎯 Why it matches
+Before recommending a competition:
 
-📅 Deadline
-
-🌐 Online / Offline / Hybrid
-
-🔗 Competition URL
-
-Do not invent information.
-
-Do not recommend expired competitions.
-
-Do not recommend competitions just because
-they appeared in search results.
+1. Check its deadline against today's date.
+2. Never recommend an expired competition.
+3. Never recommend a competition marked
+   "is_expired": true.
+4. Never recommend a competition marked
+   "blocked": true.
+5. Never recommend a generic listing page,
+   search page, category page or collection page.
+6. Use the individual competition URL whenever
+   one is available.
+7. If the deadline is unknown, clearly say
+   "Deadline: Not confirmed" instead of inventing
+   a date.
 """
-        },
 
-        {
-            "role": "user",
+    # -----------------------------------
+    # INITIAL USER MESSAGE
+    # -----------------------------------
 
-            "content": f"""
+    user_message = f"""
 Find CURRENT and UPCOMING competitions
 for me.
 
-My profile:
+MY CURRENT PROFILE:
 
 Skills:
 {', '.join(user_profile['skills'])}
@@ -443,137 +322,173 @@ Experience level:
 
 Preference:
 {user_profile['preference']}
+
+
+MY PREVIOUS REMEMBERED PROFILE:
+
+Skills:
+{', '.join(previous_profile.get('skills', [])) if previous_profile else 'None'}
+
+Interests:
+{', '.join(previous_profile.get('interests', [])) if previous_profile else 'None'}
+
+Experience level:
+{previous_profile.get('experience_level', 'None') if previous_profile else 'None'}
+
+Preference:
+{previous_profile.get('preference', 'None') if previous_profile else 'None'}
+
+
+MEMORY INSTRUCTION:
+
+Use the previous remembered profile as additional
+context about my preferences.
+
+The CURRENT profile has priority if it differs
+from the previous remembered profile.
+
+Do not assume that old preferences are still valid
+when the current profile provides different values.
 """
+
+
+    # -----------------------------------
+    # MESSAGE HISTORY
+    # -----------------------------------
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+
+        {
+            "role": "user",
+            "content": user_message
         }
 
     ]
 
-
-    # ======================================
+        # -----------------------------------
     # REACT LOOP
-    # ======================================
+    # -----------------------------------
 
-    while True:
+    for step in range(10):
 
         print("\n🤖 THINKING...")
 
         response = client.chat.completions.create(
-
             model="openai/gpt-4o-mini",
-
             messages=messages,
-
             tools=tools,
-
             tool_choice="auto"
         )
 
-        message = response.choices[0].message
+        assistant_message = response.choices[0].message
 
-        messages.append(message)
+        messages.append(
+            assistant_message
+        )
 
 
-        # ==================================
-        # FINAL ANSWER
-        # ==================================
+        # -----------------------------------
+        # CHECK FOR TOOL CALLS
+        # -----------------------------------
 
-        if not message.tool_calls:
+        if not assistant_message.tool_calls:
+
+            print("\n🏆 FINAL RECOMMENDATIONS\n")
 
             print(
-                "\n🏆 FINAL RECOMMENDATIONS\n"
+                assistant_message.content
             )
 
-            print(message.content)
-
-            break
+            return
 
 
-        # ==================================
-        # TOOL CALLS
-        # ==================================
+        # -----------------------------------
+        # EXECUTE TOOL CALLS
+        # -----------------------------------
 
-        for tool_call in message.tool_calls:
+        for tool_call in assistant_message.tool_calls:
 
-            tool_name = (
-                tool_call.function.name
-            )
+            tool_name = tool_call.function.name
 
             arguments = json.loads(
                 tool_call.function.arguments
             )
 
             print(
-                f"🔧 TOOL CALL: {tool_name}"
+                f"\n🔧 TOOL CALL: {tool_name}"
             )
 
             print(
-                f"📦 ARGUMENTS: {arguments}"
+                "Arguments:",
+                arguments
             )
 
 
-            # Execute tool
+            # -----------------------------------
+            # HARD EXPIRY CHECK
+            # -----------------------------------
+
+                        # -----------------------------------
+            # EXECUTE TOOL
+            # -----------------------------------
+
             result = execute_tool(
                 tool_name,
                 arguments
             )
 
-            # --------------------------------------
-            # HARD EXPIRY GATE
-            # --------------------------------------
+
+            # -----------------------------------
+            # HARD EXPIRY PROTECTION
+            # -----------------------------------
 
             if tool_name == "fetch_competition":
 
-                if result.get("is_expired"):
-
-                    print("🚫 BLOCKED — EXPIRED COMPETITION")
+                if (
+                    isinstance(result, dict)
+                    and result.get("is_expired") is True
+                ):
 
                     result["blocked"] = True
-                    result["block_reason"] = (
-            "Competition is expired and must not be recommended."
-        )
 
-                else:
-
-                 result["blocked"] = False
-
-            # ----------------------------------
-            # SHOW EXPIRY INFORMATION
-            # ----------------------------------
-
-            if tool_name == "fetch_competition":
-
-                if result.get("is_expired"):
-
-                    print(
-                        "❌ EXPIRED — REJECTED"
+                    result["error"] = (
+                        "This competition is expired. "
+                        "Do NOT recommend it."
                     )
 
-                else:
 
-                    print(
-                        "✅ APPEARS CURRENT"
-                    )
+            # -----------------------------------
+            # OBSERVE TOOL RESULT
+            # -----------------------------------
 
-                print(
-                    "📅 Detected deadline:",
-                    result.get("deadline")
-                )
+            print("\n👀 OBSERVATION:")
+            print(result)
 
 
-            print(
-                "👀 OBSERVATION RECEIVED"
-            )
-
-
-            # Send observation back to LLM
             messages.append(
                 {
                     "role": "tool",
-
-                    "tool_call_id":
-                    tool_call.id,
-
-                    "content":
-                    json.dumps(result)
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result)
                 }
             )
+
+
+    # -----------------------------------
+    # MAXIMUM STEPS REACHED
+    # -----------------------------------
+
+    print(
+        "\n⚠️ Agent reached the maximum number "
+        "of reasoning steps."
+    )
+
+
+# -----------------------------------
+# END OF AGENT
+# -----------------------------------

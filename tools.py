@@ -27,7 +27,7 @@ tavily = TavilyClient(
 # CURRENT DATE
 # ==========================================
 
-CURRENT_DATE = datetime(2026, 9, 5)
+CURRENT_DATE = datetime.now()
 
 
 # ==========================================
@@ -109,6 +109,7 @@ def search_competitions(query: str, max_results: int = 5):
         "/best-hackathons",
 
         "allhackathons.com",
+        "ai-hackathons",
         "facebook.com",
         "instagram.com",
         "linkedin.com",

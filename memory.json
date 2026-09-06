@@ -1,0 +1,13 @@
+{
+    "user_profile": {
+        "skills": [
+            "ml"
+        ],
+        "interests": [
+            "ai"
+        ],
+        "experience_level": "beginner",
+        "preference": "any"
+    },
+    "past_recommendations": []
+}

@@ -1,4 +1,12 @@
 from agent import run_agent
+from memory import save_user_profile, get_user_profile
+
+
+# -----------------------------------
+# GET PREVIOUS MEMORY
+# -----------------------------------
+
+previous_profile = get_user_profile()
 
 
 # -----------------------------------
@@ -49,7 +57,7 @@ user_interests = [
 
 
 # -----------------------------------
-# USER PROFILE
+# CURRENT USER PROFILE
 # -----------------------------------
 
 user_profile = {
@@ -75,6 +83,39 @@ print("Preference:", preference)
 
 
 # -----------------------------------
+# DISPLAY MEMORY
+# -----------------------------------
+
+if previous_profile:
+
+    print("\n🧠 MEMORY FOUND")
+
+    print(
+        "Previous skills:",
+        ", ".join(previous_profile.get("skills", []))
+    )
+
+    print(
+        "Previous interests:",
+        ", ".join(previous_profile.get("interests", []))
+    )
+
+    print(
+        "Previous experience:",
+        previous_profile.get("experience_level", "")
+    )
+
+    print(
+        "Previous preference:",
+        previous_profile.get("preference", "")
+    )
+
+else:
+
+    print("\n🧠 No previous memory found.")
+
+
+# -----------------------------------
 # START AGENT
 # -----------------------------------
 
@@ -82,4 +123,14 @@ print("\n" + "=" * 50)
 print("🤖 SEARCHING FOR YOUR BEST COMPETITIONS...")
 print("=" * 50)
 
-run_agent(user_profile)
+run_agent(
+    user_profile,
+    previous_profile
+)
+
+
+# -----------------------------------
+# SAVE CURRENT PROFILE
+# -----------------------------------
+
+save_user_profile(user_profile)
