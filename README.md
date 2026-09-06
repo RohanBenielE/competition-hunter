@@ -7,8 +7,10 @@ An Agentic AI system that searches for current competitions and hackathons and r
 ### 1. Clone the Repository
 
 ```bash
-git clone YOUR_REPOSITORY_LINK
+git clone https://github.com/RohanBenielE/competition-hunter.git
+
 cd competition-hunter
+
 2. Install the Required Packages
 pip install -r requirements.txt
 
